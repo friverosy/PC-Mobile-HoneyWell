@@ -17,10 +17,10 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_alignParentStart="true"
-        android:layout_alignParentTop="true"
         android:orientation="vertical"
-        android:weightSum="1">
+        android:weightSum="1"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentStart="true">
 
         <Spinner
             android:id="@+id/spinner_setLanded"
@@ -28,29 +28,44 @@
             android:layout_height="wrap_content"
             android:background="@android:color/darker_gray" />
 
-        <Switch
+        <info.hoang8f.android.segmented.SegmentedGroup
             android:id="@+id/mySwitch"
-            android:layout_width="242dp"
+            android:layout_width="286dp"
             android:layout_height="wrap_content"
-            android:checked="true"
-            android:fontFamily="sans-serif-medium"
-            android:gravity="center_vertical|center_horizontal|start"
-            android:textAlignment="center"
-            android:textColor="@android:color/background_light"
-            android:textOff="Desembarque"
-            android:textOn="Embarque"
-            android:textSize="28sp"
-            android:textStyle="normal|bold" />
+            android:layout_marginLeft="10dp"
+            android:layout_marginRight="10dp"
+            android:layout_marginTop="15dp"
+            android:gravity="center"
+            android:layout_gravity="center"
+            android:orientation="horizontal"
+            app:sc_border_width="2dp"
+            app:sc_corner_radius="10dp">
+
+            <RadioButton
+                android:id="@+id/in"
+                style="@style/RadioButton"
+                android:layout_width="150dp"
+                android:layout_height="wrap_content"
+                android:text="Embarque" />
+
+            <RadioButton
+                android:id="@+id/out"
+                style="@style/RadioButton"
+                android:layout_width="120dp"
+                android:layout_height="wrap_content"
+                android:text="Desembarque" />
+        </info.hoang8f.android.segmented.SegmentedGroup>
 
         <ImageView
             android:id="@+id/imageViewLogo"
             android:layout_width="match_parent"
+            android:layout_marginTop="20dp"
             android:layout_height="60dp"
             app:srcCompat="@drawable/logo" />
 
         <Space
             android:layout_width="match_parent"
-            android:layout_height="10dp" />
+            android:layout_height="20dp" />
 
         <TextView
             android:id="@+id/fullname"
@@ -62,12 +77,13 @@
             android:textColor="@android:color/white"
             android:textSize="26sp"
             android:textStyle="bold"
-            android:layout_width="300dp" />
+            android:layout_width="match_parent" />
 
         <EditText
             android:id="@+id/rut"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
             android:ems="10"
             android:inputType="textPersonName"
             android:hint="Nº Documento"

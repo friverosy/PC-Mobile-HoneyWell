@@ -5,7 +5,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.database.Cursor;
-import android.device.ScanManager;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.media.SoundPool;
@@ -31,7 +30,6 @@ public class find_people_in_manifest extends AppCompatActivity {
 
     private final static String SCAN_ACTION = "urovo.rcv.message";//action
     private Vibrator mVibrator;
-    private ScanManager mScanManager;
     private SoundPool soundpool = null;
     private String barcodeStr;
     private boolean isScaning = false;
@@ -216,10 +214,6 @@ public class find_people_in_manifest extends AppCompatActivity {
 
     private void initScan() {
         // TODO Auto-generated method stub
-        mScanManager = new ScanManager();
-        mScanManager.openScanner();
-
-        mScanManager.switchOutputMode(0);
         soundpool = new SoundPool(1, AudioManager.STREAM_NOTIFICATION, 100); // MODE_RINGTONE
     }
 
@@ -233,11 +227,6 @@ public class find_people_in_manifest extends AppCompatActivity {
     protected void onPause() {
         // TODO Auto-generated method stub
         super.onPause();
-        if (mScanManager != null) {
-            mScanManager.stopDecode();
-            isScaning = false;
-        }
-        unregisterReceiver(mScanReceiver);
     }
 
     @Override

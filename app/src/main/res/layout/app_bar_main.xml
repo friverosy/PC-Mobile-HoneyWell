@@ -43,14 +43,10 @@
         android:id="@+id/fab2"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="0dp"
-        android:layout_marginEnd="0dp"
-        android:layout_marginStart="0dp"
-        android:layout_marginTop="0dp"
         app:srcCompat="@android:drawable/ic_dialog_info"
         app:layout_anchor="@+id/frameLayoutContent"
-        app:layout_anchorGravity="bottom|left"
-        android:layout_gravity="top|right" />
+        android:layout_margin="@dimen/fab_margin"
+        app:layout_anchorGravity="bottom|left" />
 
     <!--app:layout_anchor="@id/fab"-->
 

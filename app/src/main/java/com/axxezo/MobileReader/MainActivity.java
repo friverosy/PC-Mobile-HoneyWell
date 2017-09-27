@@ -60,7 +60,6 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.database.Cursor;
-import android.device.ScanManager;
 import android.graphics.Color;
 import android.media.MediaPlayer;
 import android.os.AsyncTask;
@@ -76,6 +75,7 @@ import android.support.v4.widget.DrawerLayout;
 import android.support.v7.app.ActionBarDrawerToggle;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -85,10 +85,21 @@ import android.widget.ArrayAdapter;
 import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.Spinner;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import com.honeywell.aidc.AidcManager;
+import com.honeywell.aidc.BarcodeFailureEvent;
+import com.honeywell.aidc.BarcodeReadEvent;
+import com.honeywell.aidc.BarcodeReader;
+import com.honeywell.aidc.ScannerNotClaimedException;
+import com.honeywell.aidc.ScannerUnavailableException;
+import com.honeywell.aidc.TriggerStateChangeEvent;
+import com.honeywell.aidc.UnsupportedPropertyException;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -112,6 +123,7 @@ import java.util.TimerTask;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
+import info.hoang8f.android.segmented.SegmentedGroup;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -122,7 +134,7 @@ import static com.axxezo.MobileReader.R.id.status;
 
 
 public class MainActivity extends AppCompatActivity
-        implements NavigationView.OnNavigationItemSelectedListener {
+        implements NavigationView.OnNavigationItemSelectedListener,BarcodeReader.BarcodeListener,BarcodeReader.TriggerListener {
 
 
     private static String token_navieraAustral = "860a2e8f6b125e4c7b9bc83709a0ac1ddac9d40f";
@@ -132,17 +144,14 @@ public class MainActivity extends AppCompatActivity
     private TextView TextViewStatus;
     private TextView TextViewManifestUpdate;
     private ImageView imageview;
-    private final static String SCAN_ACTION = "urovo.rcv.message";//action
     private Vibrator mVibrator;
-    private ScanManager mScanManager;
     private String barcodeStr;
-    private boolean isScaning = false;
     MediaPlayer mp3Dennied;
     MediaPlayer mp3Permitted;
     MediaPlayer mp3Error;
     private static String AxxezoAPI;
     private boolean is_input = true;
-    private Switch mySwitch;
+    private SegmentedGroup mySwitch;
     private Spinner comboLanded;
     private String selectedSpinnerLanded;
     private int selectedIntSpinnerLanded;
@@ -150,6 +159,12 @@ public class MainActivity extends AppCompatActivity
     private String TextViewTimePeople;
     public ArrayAdapter<String> adapter;
     private String route;
+    private RadioButton in;
+    private RadioButton out;
+
+    // HonetWell Objects
+    private static BarcodeReader barcodeReader;
+    private AidcManager manager;
 
     /********
      * Timers Asyntask
@@ -184,7 +199,9 @@ public class MainActivity extends AppCompatActivity
         mp3Dennied = MediaPlayer.create(MainActivity.this, R.raw.bad);
         mp3Permitted = MediaPlayer.create(MainActivity.this, R.raw.good);
         mp3Error = MediaPlayer.create(MainActivity.this, R.raw.error);
-        mySwitch = (Switch) findViewById(R.id.mySwitch);
+        mySwitch = (SegmentedGroup) findViewById(R.id.mySwitch);
+        in = (RadioButton) findViewById(R.id.in);
+        out = (RadioButton) findViewById(R.id.out);
         selectedIntSpinnerLanded = -1;
         selectedSpinnerLanded = "";
         TextViewTimePeople = "";
@@ -201,6 +218,53 @@ public class MainActivity extends AppCompatActivity
         DatabaseHelper db=DatabaseHelper.getInstance(this);
         route=db.selectFirst("select route_name from config")!=null?db.selectFirst("select route_name from config"):"";
 
+        // create the AidcManager providing a Context and an
+        // CreatedCallback implementation.
+        AidcManager.create(this, new AidcManager.CreatedCallback() {
+            @Override
+            public void onCreated(AidcManager aidcManager) {
+                manager = aidcManager;
+                // use the manager to create a BarcodeReader with a session
+                // associated with the internal imager.
+                barcodeReader = manager.createBarcodeReader();
+
+                try {
+                    // apply settings
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_CODE_128_ENABLED, true);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_GS1_128_ENABLED, true);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_QR_CODE_ENABLED, true);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_CODE_39_ENABLED, true);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_DATAMATRIX_ENABLED, true);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_UPC_A_ENABLE, true);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_EAN_13_ENABLED, false);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_AZTEC_ENABLED, false);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_CODABAR_ENABLED, false);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_INTERLEAVED_25_ENABLED, false);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_DATA_PROCESSOR_LAUNCH_BROWSER, false);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_PDF_417_ENABLED, true);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_NOTIFICATION_GOOD_READ_ENABLED, false);
+                    // Set Max Code 39 barcode length
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_CODE_39_MAXIMUM_LENGTH, 10);
+                    // Turn on center decoding
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_CENTER_DECODE, true);
+                    // Disable bad read response, handle in onFailureEvent
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_NOTIFICATION_BAD_READ_ENABLED, false);
+                    // register bar code event listener
+                    barcodeReader.addBarcodeListener(MainActivity.this);
+                    // register trigger state change listener
+                    barcodeReader.addTriggerListener(MainActivity.this);
+                    try {
+                        barcodeReader.claim();
+                    } catch (ScannerUnavailableException e) {
+                        Log.e("error",e.getMessage());
+                    }
+
+                } catch (UnsupportedPropertyException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+
         FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
         if (fab != null) {
             fab.setOnClickListener(new View.OnClickListener() {
@@ -214,7 +278,7 @@ public class MainActivity extends AppCompatActivity
                         InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
                         imm.showSoftInput(TextViewRut, InputMethodManager.SHOW_IMPLICIT);
                     } else {
-                        PeopleValidator(TextViewRut.getText().toString().trim(), "", "", 17);
+                        PeopleValidator(TextViewRut.getText().toString().trim(), "", "","]L2");
                     }
                 }
             });
@@ -227,7 +291,6 @@ public class MainActivity extends AppCompatActivity
                 @Override
                 public void onClick(View view) {
                     DatabaseHelper db = DatabaseHelper.getInstance(getApplicationContext());
-                    String switchState = mySwitch.isChecked() ? "Embarque" : "Desembarque";
                     String text = "Ruta: " + db.selectFirst("select route_name from config") +
                             "\nItinerario: " + db.selectFirst("select route_id from config") +
                             "\nPasajeros Puerto: " + selectedSpinnerLanded +
@@ -256,16 +319,17 @@ public class MainActivity extends AppCompatActivity
         if (navigationView != null) {
             navigationView.setNavigationItemSelectedListener(this);
         }
-
-        // Set by default
-        mySwitch.setChecked(true);
-        mySwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+        in.toggle();//set enable by default embark in segmented button
+        mySwitch.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
             @Override
-            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                if (isChecked) {
-                    is_input = true;
-                } else {
-                    is_input = false;
+            public void onCheckedChanged(RadioGroup group, int checkedId) {
+                switch (checkedId) {
+                    case R.id.in:
+                        is_input = true;
+                        break;
+                    case R.id.out:
+                        is_input = false;
+                        break;
                 }
             }
         });
@@ -390,114 +454,6 @@ public class MainActivity extends AppCompatActivity
         }
         return true;
     }
-
-    /**
-     * Receive the information of barcod read and proccess that,
-     * once that extract dni of qr or barcode, send this to validate
-     * in method PeopleValidator
-     */
-    private BroadcastReceiver mScanReceiver = new BroadcastReceiver() {
-
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            Slack slack = new Slack(getApplicationContext());
-            // TODO Auto-generated method stub
-            try {
-                new LoadSound(4).execute();
-                isScaning = false;
-                mVibrator.vibrate(100);
-                reset();
-
-                byte[] barcode = intent.getByteArrayExtra("barocode");
-                int barocodelen = intent.getIntExtra("length", 0);
-                byte barcodeType = intent.getByteExtra("barcodeType", (byte) 0);
-                barcodeStr = new String(barcode, 0, barocodelen);
-                String rawCode = barcodeStr;
-
-                int flag = 0; // 0 for end without k, 1 with k
-                People person = new People();
-
-                if (barcodeType == 28) { // QR code
-                    if (barcodeStr.contains("client_code") && barcodeStr.contains("id_itinerary")) {
-                        try { // Its a ticket
-                            JSONObject json = new JSONObject(barcodeStr);
-                            String doc = json.getString("client_code");
-
-                            if (doc.contains("-")) {
-                                doc = doc.substring(0, doc.indexOf("-"));
-                            }
-                            person.setDocument(doc);
-                            barcodeStr = doc;
-                            PeopleValidator(doc, json.getString("id_itinerary"), json.getString("port"), barcodeType);
-                        } catch (JSONException e) {
-                            e.printStackTrace();
-                        }
-                    }else if (rawCode.equals("close trip now")) {
-                        if (comboLanded.getCount() > 0) {
-                            Intent closeTrip = new Intent(getApplicationContext(), CloseTrip.class);
-                            startActivity(closeTrip);
-                        } else {
-                            makeToast("No hay viaje configurado para cerrar");
-                        }
-                    } else if (barcodeStr.startsWith("https://")) { // Its a new DNI Cards.
-                        barcodeStr = barcodeStr.substring(
-                                barcodeStr.indexOf("RUN=") + 4,
-                                barcodeStr.indexOf("&type"));
-                        // Remove DV.
-                        barcodeStr = barcodeStr.substring(0, barcodeStr.indexOf("-"));
-                        PeopleValidator(barcodeStr, "", "", barcodeType);
-                    } else if (!barcodeStr.contains("id_itinerary")) {
-                        new LoadSound(1).execute();
-                        TextViewFullname.setText("");
-                        TextViewStatus.setText("QR INVALIDO");
-                        imageview.setImageResource(R.drawable.img_false);
-                        //slack.sendMessage("ERROR", "Codigo QR invalido (" + rawCode + "),\nLine: " + new Throwable().getStackTrace()[0].getLineNumber());
-                    }
-
-                }
-                if (barcodeType == 17) { // PDF417->old dni
-                    // Validate if the rut is > 10 millions
-                    String rutValidator = barcodeStr.substring(0, 8);
-                    rutValidator = rutValidator.replace(" ", "");
-                    rutValidator = rutValidator.endsWith("K") ? rutValidator.replace("K", "0") : rutValidator;
-                    char dv = barcodeStr.substring(8, 9).charAt(0);
-                    boolean isvalid = ValidarRut(Integer.parseInt(rutValidator), dv);
-                    if (isvalid)
-                        barcodeStr = rutValidator;
-                    else {
-                        // Try validate rut size below 10.000.000
-                        rutValidator = barcodeStr.substring(0, 7);
-                        rutValidator = rutValidator.replace(" ", "");
-                        rutValidator = rutValidator.endsWith("K") ? rutValidator.replace("K", "0") : rutValidator;
-                        dv = barcodeStr.substring(7, 8).charAt(0);
-                        isvalid = ValidarRut(Integer.parseInt(rutValidator), dv);
-                        if (isvalid)
-                            barcodeStr = rutValidator;
-                        else {
-                            barcodeStr = "";
-                            TextViewStatus.setText("RUT INVALIDO");
-                        }
-                    }
-                    // Get name from DNI.
-                    String[] array = rawCode.split("\\s+"); // Split by whitespace.
-                    try {
-                        TextViewFullname.setText(array[1].substring(0, array[1].indexOf("CHL")));
-                    } catch (ArrayIndexOutOfBoundsException e) {
-                        TextViewFullname.setText(array[2].substring(0, array[2].indexOf("CHL")));
-                    } catch (Exception ex) {
-                        ex.printStackTrace();
-                        TextViewFullname.setText("");
-                    }
-                    PeopleValidator(barcodeStr, "", "", barcodeType);
-                }
-            } catch (NullPointerException e) {
-                e.printStackTrace();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-    };
-
     /**
      * Return current local datetime in PDA, in format that specifies in string format
      *
@@ -539,30 +495,37 @@ public class MainActivity extends AppCompatActivity
         }
         return dv == (char) (s != 0 ? s + 47 : 75);
     }
-
-    private void initScan() {
-        // TODO Auto-generated method stub
-        mScanManager = new ScanManager();
-        mScanManager.openScanner();
-        mScanManager.switchOutputMode(0);
-    }
-
     @Override
     protected void onDestroy() {
         // TODO Auto-generated method stub
         super.onDestroy();
-        //  s.ServerKill();
+        if (barcodeReader != null)
+        {
+            // unregister barcode event listener
+            barcodeReader.removeBarcodeListener(this);
+            // unregister trigger state change listener
+            barcodeReader.removeTriggerListener(this);
+            // close BarcodeReader to clean up resources.
+            // once closed, the object can no longer be used.
+            barcodeReader.close();
+        }
+        if (manager != null)
+        {
+            // close AidcManager to disconnect from the scanner service.
+            // once closed, the object can no longer be used.
+            manager.close();
+        }
     }
 
     @Override
     protected void onPause() {
         // TODO Auto-generated method stub
         super.onPause();
-        if (mScanManager != null) {
-            mScanManager.stopDecode();
-            isScaning = false;
+        if (barcodeReader != null) {
+            // release the scanner claim so we don't get any scanner
+            // notifications while paused.
+            barcodeReader.release();
         }
-        unregisterReceiver(mScanReceiver);
         SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
         SharedPreferences.Editor editor = sharedPreferences.edit();
         editor.putInt("spinnerSelection", comboLanded.getSelectedItemPosition());
@@ -574,12 +537,15 @@ public class MainActivity extends AppCompatActivity
     protected void onResume() {
         // TODO Auto-generated method stub
         super.onResume();
-        initScan();
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(SCAN_ACTION);
-        registerReceiver(mScanReceiver, filter);
         // Load spinner selected in sharedPreference method
-
+        if (barcodeReader != null) {
+            try {
+                barcodeReader.claim();
+            } catch (ScannerUnavailableException e) {
+                e.printStackTrace();
+                Toast.makeText(this, "Scanner unavailable "+e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        }
         SharedPreferences sharedPref = getSharedPreferences("userPreference", MODE_PRIVATE);
         int spinnerValue = sharedPref.getInt("spinnerSelection", -1);
         if (spinnerValue != -1) {// set the value of the spinner
@@ -621,32 +587,6 @@ public class MainActivity extends AppCompatActivity
 
         timer.schedule(task, 0, timer_asyncUpdateManifest);  // 5 min=300000 // 6 min =360000
     }
-
-    /*   private void asyncDeletePeopleinTime() {
-           final Handler handler = new Handler();
-           Timer timer = new Timer();
-
-           TimerTask task = new TimerTask() {
-               @Override
-               public void run() {
-                   handler.post(new Runnable() {
-                       public void run() {
-                           try {
-                               AsyncTask_updatePeopleManifest = new asyncTask_updatePeopleManifest();
-                               AsyncTask_updatePeopleManifest.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
-                           } catch (Exception e) {
-                               e.printStackTrace();
-                               log.writeLog(getApplicationContext(), "MainActivity", "ERROR", "asyncUpdateManifestState() " + e.getMessage());
-                           }
-                       }
-                   });
-               }
-           };
-
-           timer.schedule(task, 0, timer_asyncDeletePeopleManifest);  // 5 min=300000 // 6 min =360000
-       }
-   */
-
     /**
      * /**
      * Each timer_asyncUpdatePeopleState time
@@ -726,10 +666,6 @@ public class MainActivity extends AppCompatActivity
      */
     public void reset() {
         try {
-            initScan();
-            IntentFilter filter = new IntentFilter();
-            filter.addAction(SCAN_ACTION);
-            registerReceiver(mScanReceiver, filter);
             TextViewFullname.setText("Nombre");
             TextViewRut.setText("Nº Documento");
             TextViewStatus.setText("");
@@ -774,9 +710,9 @@ public class MainActivity extends AppCompatActivity
      * @param rut=          dni number extract in method broadcastReceivere
      * @param id_itinerary= travel id, use to validate person in table manifest
      * @param port=         embark person port
-     * @param type=         indicate the type of code read
+     * @param barcodetype=  indicate the type of code read
      */
-    public void PeopleValidator(String rut, String id_itinerary, String port, int type) {
+    public void PeopleValidator(String rut, String id_itinerary, String port, String  barcodetype) {
         boolean valid = false;
         Cursor person = null;
         Record record = new Record(); // Object to be sended to API Axxezo.
@@ -789,11 +725,11 @@ public class MainActivity extends AppCompatActivity
             record.setReason(5);
         } else {
             TextViewRut.setText(rut);
-            if (type == 28 && !id_itinerary.isEmpty()) { //pure QR code
+            if (barcodetype.equals("]Q1") && !id_itinerary.isEmpty()) { //pure QR code
                 if (id_itinerary.trim().equals(db.selectFirst("select route_id from config where route_id='" + id_itinerary + "'").trim())) {
                     validation = db.select("select p.name,m.origin from ports as p left join manifest as m on p.id_mongo=m.origin where m.id_people='" + rut + "'");
                     if (validation.getCount() != 0) {
-                        if (mySwitch.isChecked()) {
+                        if (is_input) {
                             if ((validation.getString(0)).trim().equals(selectedSpinnerLanded.trim()))
                                 valid = true;
                             else {
@@ -817,10 +753,10 @@ public class MainActivity extends AppCompatActivity
                     TextViewStatus.setText("VIAJE NO CORRESPONDE");
                     record.setReason(4);
                 }
-            } else if (type == 28 && id_itinerary == "" || type == 17) { //old dni and new dni validations
+            } else if (barcodetype.equals("]Q1")&& id_itinerary == "" || barcodetype.equals("]L2")) { //old dni and new dni validations
                 validation = db.select("select p.name,m.id_people from ports as p left join manifest as m on p.id_mongo=m.origin where m.id_people='" + rut + "'");
                 if (validation.getCount() != 0) {
-                    if (mySwitch.isChecked()) {
+                    if (is_input) {
                         if (!selectedSpinnerLanded.equals(validation.getString(0))) {
                             TextViewStatus.setText("PUERTO EMBARQUE ES " + validation.getString(0));
                             record.setReason(1);
@@ -1049,6 +985,44 @@ public class MainActivity extends AppCompatActivity
         return result;
     }
 
+    @Override
+    public void onBarcodeEvent(final BarcodeReadEvent event) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                handleBarcode(event);
+            }
+        });
+    }
+
+    @Override
+    public void onFailureEvent(BarcodeFailureEvent barcodeFailureEvent) {
+        runOnUiThread(new Runnable() {
+
+            @Override
+            public void run() {
+                Toast.makeText(MainActivity.this, "Error al intentar leer el codigo", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+/* event of button and led usage*/
+    @Override
+    public void onTriggerEvent(TriggerStateChangeEvent event) {
+        try {
+            // only handle trigger presses
+            // turn on/off aimer, illumination and decoding
+            barcodeReader.aim(event.getState());
+            barcodeReader.light(event.getState());
+            barcodeReader.decode(event.getState());
+
+        } catch (ScannerNotClaimedException e) {
+            e.printStackTrace();
+            Toast.makeText(this, "Scanner is not claimed", Toast.LENGTH_SHORT).show();
+        } catch (ScannerUnavailableException e) {
+            e.printStackTrace();
+            Toast.makeText(this, "Scanner unavailable", Toast.LENGTH_SHORT).show();
+        }
+    }
     public class RegisterTask extends AsyncTask<Void, Void, String> {
         private String url;
         private List<Record> newRecord;
@@ -1074,6 +1048,98 @@ public class MainActivity extends AppCompatActivity
                     POST(record, url, client);
             }
             return postReturn;
+        }
+    }
+    private void handleBarcode(BarcodeReadEvent event){
+        try {
+            new LoadSound(4).execute();
+            mVibrator.vibrate(100);
+            reset();
+            barcodeStr = event.getBarcodeData();
+            String rawCode = barcodeStr;
+            String barcodeType=event.getAimId();
+            Log.e("AIM ",barcodeType);
+            Log.e("CodeId ",event.getCodeId());
+            int flag = 0; // 0 for end without k, 1 with k
+            People person = new People();
+
+            if (barcodeType.equals("]Q1")) { // QR code
+                if (barcodeStr.contains("client_code") && barcodeStr.contains("id_itinerary")) {
+                    try { // Its a ticket
+                        JSONObject json = new JSONObject(barcodeStr);
+                        String doc = json.getString("client_code");
+
+                        if (doc.contains("-")) {
+                            doc = doc.substring(0, doc.indexOf("-"));
+                        }
+                        person.setDocument(doc);
+                        barcodeStr = doc;
+                        PeopleValidator(doc, json.getString("id_itinerary"), json.getString("port"), barcodeType);
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
+                }else if (rawCode.equals("close trip now")) {
+                    if (comboLanded.getCount() > 0) {
+                        Intent closeTrip = new Intent(getApplicationContext(), CloseTrip.class);
+                        startActivity(closeTrip);
+                    } else {
+                        makeToast("No hay viaje configurado para cerrar");
+                    }
+                } else if (barcodeStr.startsWith("https://")) { // Its a new DNI Cards.
+                    barcodeStr = barcodeStr.substring(
+                            barcodeStr.indexOf("RUN=") + 4,
+                            barcodeStr.indexOf("&type"));
+                    // Remove DV.
+                    barcodeStr = barcodeStr.substring(0, barcodeStr.indexOf("-"));
+                    PeopleValidator(barcodeStr, "", "", barcodeType);
+                } else if (!barcodeStr.contains("id_itinerary")) {
+                    new LoadSound(1).execute();
+                    TextViewFullname.setText("");
+                    TextViewStatus.setText("QR INVALIDO");
+                    imageview.setImageResource(R.drawable.img_false);
+                    //slack.sendMessage("ERROR", "Codigo QR invalido (" + rawCode + "),\nLine: " + new Throwable().getStackTrace()[0].getLineNumber());
+                }
+
+            }
+            if (barcodeType.equals("]L2")) { // PDF417->old dni
+                // Validate if the rut is > 10 millions
+                String rutValidator = barcodeStr.substring(0, 8);
+                rutValidator = rutValidator.replace(" ", "");
+                rutValidator = rutValidator.endsWith("K") ? rutValidator.replace("K", "0") : rutValidator;
+                char dv = barcodeStr.substring(8, 9).charAt(0);
+                boolean isvalid = ValidarRut(Integer.parseInt(rutValidator), dv);
+                if (isvalid)
+                    barcodeStr = rutValidator;
+                else {
+                    // Try validate rut size below 10.000.000
+                    rutValidator = barcodeStr.substring(0, 7);
+                    rutValidator = rutValidator.replace(" ", "");
+                    rutValidator = rutValidator.endsWith("K") ? rutValidator.replace("K", "0") : rutValidator;
+                    dv = barcodeStr.substring(7, 8).charAt(0);
+                    isvalid = ValidarRut(Integer.parseInt(rutValidator), dv);
+                    if (isvalid)
+                        barcodeStr = rutValidator;
+                    else {
+                        barcodeStr = "";
+                        TextViewStatus.setText("RUT INVALIDO");
+                    }
+                }
+                // Get name from DNI.
+                String[] array = rawCode.split("\\s+"); // Split by whitespace.
+                try {
+                    TextViewFullname.setText(array[1].substring(0, array[1].indexOf("CHL")));
+                } catch (ArrayIndexOutOfBoundsException e) {
+                    TextViewFullname.setText(array[2].substring(0, array[2].indexOf("CHL")));
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    TextViewFullname.setText("");
+                }
+                PeopleValidator(barcodeStr, "", "", barcodeType);
+            }
+        } catch (NullPointerException e) {
+            e.printStackTrace();
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
@@ -1155,45 +1221,6 @@ public class MainActivity extends AppCompatActivity
         //finally updating
         return content;
     }
-
-
- /*
-    public String Asyntask_deletePeopleManifest(String Url, int ID_route) throws IOException {
-        //http://axxezo-test.brazilsouth.cloudapp.azure.com:9001/api/manifests?itinerary=1824&date=2017-04-14T10:44:00
-        DatabaseHelper db = DatabaseHelper.getInstance(this);
-        updateTimePeople = db.selectFirst("select date_last_update from config");
-        URL url = new URL(Url + "/manifests?itinerary=" + ID_route + "&date=" + updateTimePeople);
-        String content = "";
-        HttpURLConnection conn = null;
-        try {
-            Log.e("URL async_new People", url.toString());
-            conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestProperty("TOKEN", token_navieraAustral);
-            conn.setRequestMethod("GET");
-            conn.setConnectTimeout(2000);
-            conn.connect();
-
-            int connStatus = conn.getResponseCode();
-            InputStream getData = conn.getInputStream();
-            if (connStatus != 200) {
-                content = String.valueOf(getData);
-            } else {
-                content = convertInputStreamToString(getData);
-            }
-        } catch (IOException ioe) {
-            ioe.printStackTrace();
-        }
-        if (conn != null) {
-            conn.disconnect();
-        }
-        if (content.length() <= 2) { //[]
-            content = "204"; // No content
-        }
-        //finally updating
-        return content;
-    }
-*/
-
     private static String convertInputStreamToString(InputStream inputStream) throws IOException {
         BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
         String line;
