@@ -213,57 +213,15 @@ public class MainActivity extends AppCompatActivity
         timer_asyncDeletePeopleManifest = 420000;               //7 min =420000
 
         // Asign url api axxezo
-        //AxxezoAPI = "http://axxezo-test.brazilsouth.cloudapp.azure.com:5002/api";
-        AxxezoAPI = "http://axxezocloud.brazilsouth.cloudapp.azure.com:5002/api";
+        AxxezoAPI = "http://axxezo-test.brazilsouth.cloudapp.azure.com:5002/api";
+        //AxxezoAPI = "http://axxezocloud.brazilsouth.cloudapp.azure.com:5002/api";
         DatabaseHelper db=DatabaseHelper.getInstance(this);
         route=db.selectFirst("select route_name from config")!=null?db.selectFirst("select route_name from config"):"";
 
         // create the AidcManager providing a Context and an
         // CreatedCallback implementation.
-        AidcManager.create(this, new AidcManager.CreatedCallback() {
-            @Override
-            public void onCreated(AidcManager aidcManager) {
-                manager = aidcManager;
-                // use the manager to create a BarcodeReader with a session
-                // associated with the internal imager.
-                barcodeReader = manager.createBarcodeReader();
+        configureReader();
 
-                try {
-                    // apply settings
-                    barcodeReader.setProperty(BarcodeReader.PROPERTY_CODE_128_ENABLED, true);
-                    barcodeReader.setProperty(BarcodeReader.PROPERTY_GS1_128_ENABLED, true);
-                    barcodeReader.setProperty(BarcodeReader.PROPERTY_QR_CODE_ENABLED, true);
-                    barcodeReader.setProperty(BarcodeReader.PROPERTY_CODE_39_ENABLED, true);
-                    barcodeReader.setProperty(BarcodeReader.PROPERTY_DATAMATRIX_ENABLED, true);
-                    barcodeReader.setProperty(BarcodeReader.PROPERTY_UPC_A_ENABLE, true);
-                    barcodeReader.setProperty(BarcodeReader.PROPERTY_EAN_13_ENABLED, false);
-                    barcodeReader.setProperty(BarcodeReader.PROPERTY_AZTEC_ENABLED, false);
-                    barcodeReader.setProperty(BarcodeReader.PROPERTY_CODABAR_ENABLED, false);
-                    barcodeReader.setProperty(BarcodeReader.PROPERTY_INTERLEAVED_25_ENABLED, false);
-                    barcodeReader.setProperty(BarcodeReader.PROPERTY_DATA_PROCESSOR_LAUNCH_BROWSER, false);
-                    barcodeReader.setProperty(BarcodeReader.PROPERTY_PDF_417_ENABLED, true);
-                    barcodeReader.setProperty(BarcodeReader.PROPERTY_NOTIFICATION_GOOD_READ_ENABLED, false);
-                    // Set Max Code 39 barcode length
-                    barcodeReader.setProperty(BarcodeReader.PROPERTY_CODE_39_MAXIMUM_LENGTH, 10);
-                    // Turn on center decoding
-                    barcodeReader.setProperty(BarcodeReader.PROPERTY_CENTER_DECODE, true);
-                    // Disable bad read response, handle in onFailureEvent
-                    barcodeReader.setProperty(BarcodeReader.PROPERTY_NOTIFICATION_BAD_READ_ENABLED, false);
-                    // register bar code event listener
-                    barcodeReader.addBarcodeListener(MainActivity.this);
-                    // register trigger state change listener
-                    barcodeReader.addTriggerListener(MainActivity.this);
-                    try {
-                        barcodeReader.claim();
-                    } catch (ScannerUnavailableException e) {
-                        Log.e("error",e.getMessage());
-                    }
-
-                } catch (UnsupportedPropertyException e) {
-                    e.printStackTrace();
-                }
-            }
-        });
 
         FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
         if (fab != null) {
@@ -342,6 +300,53 @@ public class MainActivity extends AppCompatActivity
         asyncUpdateManifestState(); // Pending change values from string to integer
         getWindow().getDecorView().findViewById(R.id.content_main).invalidate();
     }
+    public void configureReader(){
+        AidcManager.create(this, new AidcManager.CreatedCallback() {
+            @Override
+            public void onCreated(AidcManager aidcManager) {
+                manager = aidcManager;
+                // use the manager to create a BarcodeReader with a session
+                // associated with the internal imager.
+                barcodeReader = manager.createBarcodeReader();
+
+                try {
+                    // apply settings
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_CODE_128_ENABLED, true);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_GS1_128_ENABLED, true);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_QR_CODE_ENABLED, true);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_CODE_39_ENABLED, true);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_DATAMATRIX_ENABLED, true);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_UPC_A_ENABLE, true);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_EAN_13_ENABLED, false);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_AZTEC_ENABLED, false);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_CODABAR_ENABLED, false);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_INTERLEAVED_25_ENABLED, false);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_DATA_PROCESSOR_LAUNCH_BROWSER, false);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_PDF_417_ENABLED, true);
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_NOTIFICATION_GOOD_READ_ENABLED, false);
+                    // Set Max Code 39 barcode length
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_CODE_39_MAXIMUM_LENGTH, 10);
+                    // Turn on center decoding
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_CENTER_DECODE, true);
+                    // Disable bad read response, handle in onFailureEvent
+                    barcodeReader.setProperty(BarcodeReader.PROPERTY_NOTIFICATION_BAD_READ_ENABLED, false);
+                    // register bar code event listener
+                    barcodeReader.addBarcodeListener(MainActivity.this);
+                    // register trigger state change listener
+                    barcodeReader.addTriggerListener(MainActivity.this);
+                    try {
+                        barcodeReader.claim();
+                    } catch (ScannerUnavailableException e) {
+                        Log.e("error",e.getMessage());
+                    }
+
+                } catch (UnsupportedPropertyException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+    }
+
 
 
     public void fillSpinner() {
@@ -499,7 +504,8 @@ public class MainActivity extends AppCompatActivity
     protected void onDestroy() {
         // TODO Auto-generated method stub
         super.onDestroy();
-        if (barcodeReader != null)
+        Log.d("onDestroy","onDestroy");
+        /*if (barcodeReader != null)
         {
             // unregister barcode event listener
             barcodeReader.removeBarcodeListener(this);
@@ -508,7 +514,7 @@ public class MainActivity extends AppCompatActivity
             // close BarcodeReader to clean up resources.
             // once closed, the object can no longer be used.
             barcodeReader.close();
-        }
+        }*/
         if (manager != null)
         {
             // close AidcManager to disconnect from the scanner service.
@@ -521,10 +527,9 @@ public class MainActivity extends AppCompatActivity
     protected void onPause() {
         // TODO Auto-generated method stub
         super.onPause();
+        Log.e("onPause","onPause");
         if (barcodeReader != null) {
-            // release the scanner claim so we don't get any scanner
-            // notifications while paused.
-            barcodeReader.release();
+            barcodeReader.close();
         }
         SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
         SharedPreferences.Editor editor = sharedPreferences.edit();
@@ -538,13 +543,9 @@ public class MainActivity extends AppCompatActivity
         // TODO Auto-generated method stub
         super.onResume();
         // Load spinner selected in sharedPreference method
+        Log.e("onResume","onResume");
         if (barcodeReader != null) {
-            try {
-                barcodeReader.claim();
-            } catch (ScannerUnavailableException e) {
-                e.printStackTrace();
-                Toast.makeText(this, "Scanner unavailable "+e.getMessage(), Toast.LENGTH_SHORT).show();
-            }
+                configureReader();
         }
         SharedPreferences sharedPref = getSharedPreferences("userPreference", MODE_PRIVATE);
         int spinnerValue = sharedPref.getInt("spinnerSelection", -1);
@@ -556,6 +557,7 @@ public class MainActivity extends AppCompatActivity
     @Override
     protected void onRestart() {
         super.onRestart();
+
 
     }
 
@@ -1447,6 +1449,9 @@ public class MainActivity extends AppCompatActivity
         if (resultCode == RESULT_OK) {
             fillSpinner();
         }
+    }
+    static BarcodeReader getBarcodeObject() {
+        return barcodeReader;
     }
 
 

@@ -20,19 +20,27 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.TextView;
+import android.widget.Toast;
+
+import com.honeywell.aidc.AidcManager;
+import com.honeywell.aidc.BarcodeFailureEvent;
+import com.honeywell.aidc.BarcodeReadEvent;
+import com.honeywell.aidc.BarcodeReader;
+import com.honeywell.aidc.ScannerNotClaimedException;
+import com.honeywell.aidc.ScannerUnavailableException;
+import com.honeywell.aidc.TriggerStateChangeEvent;
+import com.honeywell.aidc.UnsupportedPropertyException;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
 
-public class find_people_in_manifest extends AppCompatActivity {
+public class find_people_in_manifest extends AppCompatActivity implements BarcodeReader.BarcodeListener,
+        BarcodeReader.TriggerListener {
 
-    private final static String SCAN_ACTION = "urovo.rcv.message";//action
     private Vibrator mVibrator;
-    private SoundPool soundpool = null;
     private String barcodeStr;
-    private boolean isScaning = false;
     private EditText find_people;
     private TextView show_dni;
     private TextView show_name;
@@ -44,6 +52,10 @@ public class find_people_in_manifest extends AppCompatActivity {
     MediaPlayer mp3Permitted;
     MediaPlayer mp3Error;
     private DatabaseHelper db;
+    // HonetWell Objects
+    //private com.honeywell.aidc.BarcodeReader barcodeReader;
+    private static BarcodeReader barcodeReader;
+    private AidcManager manager;
 
 
     @Override
@@ -86,56 +98,92 @@ public class find_people_in_manifest extends AppCompatActivity {
                 find_people.setText("");
             }
         });
+        barcodeReader = MainActivity.getBarcodeObject();
+        configureBarcode();
 
 
     }
 
-    private BroadcastReceiver mScanReceiver = new BroadcastReceiver() {
+    private void configureBarcode() {
+        AidcManager.create(this, new AidcManager.CreatedCallback() {
+            @Override
+            public void onCreated(AidcManager aidcManager) {
+                manager = aidcManager;
+                // use the manager to create a BarcodeReader with a session
+                // associated with the internal imager.
+                barcodeReader = manager.createBarcodeReader();
+                if (barcodeReader != null) {
+                    try {
+                        // apply settings
+                        barcodeReader.setProperty(BarcodeReader.PROPERTY_CODE_128_ENABLED, true);
+                        barcodeReader.setProperty(BarcodeReader.PROPERTY_GS1_128_ENABLED, true);
+                        barcodeReader.setProperty(BarcodeReader.PROPERTY_QR_CODE_ENABLED, true);
+                        barcodeReader.setProperty(BarcodeReader.PROPERTY_CODE_39_ENABLED, true);
+                        barcodeReader.setProperty(BarcodeReader.PROPERTY_DATAMATRIX_ENABLED, true);
+                        barcodeReader.setProperty(BarcodeReader.PROPERTY_UPC_A_ENABLE, true);
+                        barcodeReader.setProperty(BarcodeReader.PROPERTY_EAN_13_ENABLED, false);
+                        barcodeReader.setProperty(BarcodeReader.PROPERTY_AZTEC_ENABLED, false);
+                        barcodeReader.setProperty(BarcodeReader.PROPERTY_CODABAR_ENABLED, false);
+                        barcodeReader.setProperty(BarcodeReader.PROPERTY_INTERLEAVED_25_ENABLED, false);
+                        barcodeReader.setProperty(BarcodeReader.PROPERTY_DATA_PROCESSOR_LAUNCH_BROWSER, false);
+                        barcodeReader.setProperty(BarcodeReader.PROPERTY_PDF_417_ENABLED, true);
+                        barcodeReader.setProperty(BarcodeReader.PROPERTY_NOTIFICATION_GOOD_READ_ENABLED, false);
+                        // Set Max Code 39 barcode length
+                        barcodeReader.setProperty(BarcodeReader.PROPERTY_CODE_39_MAXIMUM_LENGTH, 10);
+                        // Turn on center decoding
+                        barcodeReader.setProperty(BarcodeReader.PROPERTY_CENTER_DECODE, true);
+                        // Disable bad read response, handle in onFailureEvent
+                        barcodeReader.setProperty(BarcodeReader.PROPERTY_NOTIFICATION_BAD_READ_ENABLED, false);
+                        // register bar code event listener
+                        barcodeReader.addBarcodeListener(find_people_in_manifest.this);
+                        // register trigger state change listener
+                        barcodeReader.addTriggerListener(find_people_in_manifest.this);
+                        try {
+                            barcodeReader.claim();
+                        } catch (ScannerUnavailableException e) {
+                            Log.e("error", e.getMessage());
+                        }
 
-        @Override
-        public void onReceive(Context context, Intent intent) {
+                    } catch (UnsupportedPropertyException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        });
+    }
 
-            // TODO Auto-generated method stub
+
+    private void handleBarcode(BarcodeReadEvent event) {
+        try {
             if (mp3Error.isPlaying()) mp3Error.stop();
             if (mp3Dennied.isPlaying()) mp3Dennied.stop();
             if (mp3Permitted.isPlaying()) mp3Permitted.stop();
-
-            isScaning = false;
-            //soundpool.play(soundid, 1, 1, 0, 0, 1);
-
             mVibrator.vibrate(100);
             reset("");
-            Slack slack=new Slack(getApplicationContext());
-
-            byte[] barcode = intent.getByteArrayExtra("barocode");
-            int barocodelen = intent.getIntExtra("length", 0);
-            byte barcodeType = intent.getByteExtra("barcodeType", (byte) 0);
-            Log.i("codetype", String.valueOf(barcodeType));
-            barcodeStr = new String(barcode, 0, barocodelen);
+            Slack slack = new Slack(getApplicationContext());
+            barcodeStr = event.getBarcodeData();
             String rawCode = barcodeStr;
-            Log.d("---", rawCode);
-
+            String barcodeType = event.getAimId();
             int flag = 0; // 0 for end without k, 1 with k
             People person = new People();
 
-            if (barcodeType == 28) { // QR code
-                if (barcodeStr.contains("client_code")) {
-                    // Its a ticket
-                    try {
-                        Log.d("barcode", barcodeStr);
+            if (barcodeType.equals("]Q1")) { // QR code
+                if (barcodeStr.contains("client_code") && barcodeStr.contains("id_itinerary")) {
+                    try { // Its a ticket
                         JSONObject json = new JSONObject(barcodeStr);
                         String doc = json.getString("client_code");
-                        doc = doc.substring(0, doc.length() - 2);
+
+                        if (doc.contains("-")) {
+                            doc = doc.substring(0, doc.indexOf("-"));
+                        }
                         person.setDocument(doc);
                         barcodeStr = doc;
-                        //send the text to edittext
                         find_people.setText(barcodeStr);
                         findInManifest(barcodeStr);
                     } catch (JSONException e) {
                         e.printStackTrace();
                     }
-                } else if(rawCode.startsWith("https://")) {
-                    // Its a DNI Card.
+                } else if (barcodeStr.startsWith("https://")) { // Its a new DNI Cards.
                     barcodeStr = barcodeStr.substring(
                             barcodeStr.indexOf("RUN=") + 4,
                             barcodeStr.indexOf("&type"));
@@ -144,46 +192,38 @@ public class find_people_in_manifest extends AppCompatActivity {
                     find_people.setText(barcodeStr);
                     findInManifest(barcodeStr);
                 }
-
-            } else if (barcodeType == 17) { // PDF417
-                // 1.- validate if the rut is > 10 millions
+            }
+            if (barcodeType.equals("]L2")) { // PDF417->old dni
+                // Validate if the rut is > 10 millions
                 String rutValidator = barcodeStr.substring(0, 8);
                 rutValidator = rutValidator.replace(" ", "");
                 rutValidator = rutValidator.endsWith("K") ? rutValidator.replace("K", "0") : rutValidator;
                 char dv = barcodeStr.substring(8, 9).charAt(0);
-                boolean isValid = rutValidator(Integer.parseInt(rutValidator), dv);
-                if (isValid)
+                boolean isvalid = rutValidator(Integer.parseInt(rutValidator), dv);
+                if (isvalid)
                     barcodeStr = rutValidator;
-                else { //try validate rut size below 10.000.000
+                else {
+                    // Try validate rut size below 10.000.000
                     rutValidator = barcodeStr.substring(0, 7);
                     rutValidator = rutValidator.replace(" ", "");
                     rutValidator = rutValidator.endsWith("K") ? rutValidator.replace("K", "0") : rutValidator;
                     dv = barcodeStr.substring(7, 8).charAt(0);
-                    isValid = rutValidator(Integer.parseInt(rutValidator), dv);
-                    if (isValid)
+                    isvalid = rutValidator(Integer.parseInt(rutValidator), dv);
+                    if (isvalid)
                         barcodeStr = rutValidator;
                     else {
-                        slack.sendMessage("ERROR","Dni invalido "+barcodeStr+ "\nfind_people_in_manifest Line: " + new Throwable().getStackTrace()[0].getLineNumber());
                         barcodeStr = "";
+                        slack.sendMessage("ERROR", "Dni invalido " + barcodeStr + "\nfind_people_in_manifest Line: " + new Throwable().getStackTrace()[0].getLineNumber());
                     }
-                }
-
-                // Get name from DNI.
-                String[] array = rawCode.split("\\s+"); // Split by whitespace.
-                try {
-                    find_people.setText(array[1].substring(0, array[1].indexOf("CHL")));
-                } catch (ArrayIndexOutOfBoundsException e) {
-                    find_people.setText(array[2].substring(0, array[2].indexOf("CHL")));
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                    find_people.setText("");
                 }
                 findInManifest(barcodeStr);
             }
-
-            Log.i("Cooked Barcode", barcodeStr);
+        } catch (NullPointerException e) {
+            e.printStackTrace();
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-    };
+    }
 
     public boolean rutValidator(int rut, char dv) {
         dv = dv == 'k' ? dv = 'K' : dv;
@@ -196,11 +236,6 @@ public class find_people_in_manifest extends AppCompatActivity {
 
     public void reset(String content) {
         try {
-            initScan();
-            IntentFilter filter = new IntentFilter();
-            filter.addAction(SCAN_ACTION);
-            registerReceiver(mScanReceiver, filter);
-            //show_dni.setText("");
             show_name.setText(content);
             show_origin.setText(content);
             show_destination.setText(content);
@@ -212,37 +247,43 @@ public class find_people_in_manifest extends AppCompatActivity {
         }
     }
 
-    private void initScan() {
-        // TODO Auto-generated method stub
-        soundpool = new SoundPool(1, AudioManager.STREAM_NOTIFICATION, 100); // MODE_RINGTONE
-    }
-
     @Override
     protected void onDestroy() {
         // TODO Auto-generated method stub
         super.onDestroy();
+        if (barcodeReader != null) {
+            // unregister barcode event listener
+            barcodeReader.removeBarcodeListener(this);
+            // unregister trigger state change listener
+            barcodeReader.removeTriggerListener(this);
+            // close BarcodeReader to clean up resources.
+            // once closed, the object can no longer be used.
+            barcodeReader.close();
+        }
     }
 
     @Override
     protected void onPause() {
         // TODO Auto-generated method stub
         super.onPause();
+        if (barcodeReader != null) {
+            // release the scanner claim so we don't get any scanner
+            // notifications while paused.
+            barcodeReader.release();
+        }
     }
-
     @Override
     protected void onResume() {
         // TODO Auto-generated method stub
         super.onResume();
-        initScan();
-        // sendRecordstoAPI();
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(SCAN_ACTION);
-        registerReceiver(mScanReceiver, filter);
+        if (barcodeReader != null)
+            configureBarcode();
+
     }
 
     public void findInManifest(String document) {
         Cursor get_selected_dni = db.select("select ma.id_people,(select name from ports where id_mongo=ma.origin),(select name from ports where id_mongo=ma.destination), p.name  from manifest as ma left join people as p on ma.id_people=p.document where ma.id_people='" + document + "'");
-        if (get_selected_dni!=null&&get_selected_dni.getCount() > 0) {
+        if (get_selected_dni != null && get_selected_dni.getCount() > 0) {
             mp3Permitted.start();
             show_dni.setText(document);
             show_origin.setText(get_selected_dni.getString(1));
@@ -255,9 +296,50 @@ public class find_people_in_manifest extends AppCompatActivity {
             reset("< No Encontrado >");
             image_authorized.setImageResource(R.drawable.icon_tick_false_manifest);
         }
-        if(get_selected_dni!=null)
+        if (get_selected_dni != null)
             get_selected_dni.close();
     }
 
 
+    @Override
+    public void onBarcodeEvent(final BarcodeReadEvent event) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                handleBarcode(event);
+            }
+        });
+
+    }
+
+    @Override
+    public void onFailureEvent(BarcodeFailureEvent barcodeFailureEvent) {
+        runOnUiThread(new Runnable() {
+
+            @Override
+            public void run() {
+                Toast.makeText(find_people_in_manifest.this, "No se ha leido ningun codigo", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+    }
+
+    @Override
+    public void onTriggerEvent(TriggerStateChangeEvent event) {
+        try {
+            // only handle trigger presses
+            // turn on/off aimer, illumination and decoding
+            barcodeReader.aim(event.getState());
+            barcodeReader.light(event.getState());
+            barcodeReader.decode(event.getState());
+
+        } catch (ScannerNotClaimedException e) {
+            e.printStackTrace();
+            Toast.makeText(this, "Scanner is not claimed", Toast.LENGTH_SHORT).show();
+        } catch (ScannerUnavailableException e) {
+            e.printStackTrace();
+            Toast.makeText(this, "Scanner unavailable", Toast.LENGTH_SHORT).show();
+        }
+
+    }
 }
