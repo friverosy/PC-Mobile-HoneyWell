@@ -213,8 +213,9 @@ public class MainActivity extends AppCompatActivity
         timer_asyncDeletePeopleManifest = 420000;               //7 min =420000
 
         // Asign url api axxezo
-        AxxezoAPI = "http://axxezo-test.brazilsouth.cloudapp.azure.com:5002/api";
+        //AxxezoAPI = "http://axxezo-test.brazilsouth.cloudapp.azure.com:5002/api";
         //AxxezoAPI = "http://axxezocloud.brazilsouth.cloudapp.azure.com:5002/api";
+        AxxezoAPI = "http://passengercontrol.axxezo.com:5002/api";
         DatabaseHelper db=DatabaseHelper.getInstance(this);
         route=db.selectFirst("select route_name from config")!=null?db.selectFirst("select route_name from config"):"";
 
